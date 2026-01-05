@@ -62,29 +62,6 @@
       .passage { font-size: 1.12rem; }
       .hero-title { font-size: 1.25rem; }
     }
-
-    /* 浮動游標 */
-    #readingCursor{
-      position: fixed;
-      left: 50%;
-      bottom: calc(env(safe-area-inset-bottom) + 14px);
-      transform: translateX(-50%);
-      z-index: 9999;
-      max-width: min(92vw, 560px);
-      border: 1px solid rgba(108,117,125,.35);
-      background: rgba(255,255,255,.92);
-      backdrop-filter: blur(8px);
-      -webkit-backdrop-filter: blur(8px);
-      padding: .45rem .75rem;
-      border-radius: 999px;
-      box-shadow: 0 .5rem 1.25rem rgba(0,0,0,.08);
-      font-size: .9rem;
-      color: #495057;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      pointer-events: none; /* 不干擾滑動 */
-    }
 </style>
 </head>
 
@@ -502,100 +479,11 @@ function renderTo(targetId, ref){
   update();
 })();
 
-/* ===============================
-   浮動游標：顯示目前篇章與小節（速讀/導讀）
-   - 觀察「章標題」與「節」進入視窗中央時更新
-   =============================== */
-(function setupReadingCursor(){
-  const cursor = document.getElementById('readingCursor');
-  if(!cursor) return;
-
-  const state = {
-    section: '—',
-    chapter: null,
-    verse: null
-  };
-
-  function updateText(){
-    if(!state.chapter){
-      cursor.textContent = '—';
-      return;
-    }
-    const v = state.verse ? ` · v${state.verse}` : '';
-    cursor.textContent = `${state.section}｜創世記 第${state.chapter}章${v}`;
-  }
-
-  function sectionNameFor(el){
-    const p = el.closest('#fastPassage') ? '速讀' : (el.closest('#prayPassage') ? '導讀' : '—');
-    return p;
-  }
-
-  // 先確保所有節都有資料（如果前面 render 已經加 dataset 就會有）
-  const verseEls = Array.from(document.querySelectorAll('#fastPassage .vline, #prayPassage .vline'));
-  const headEls  = Array.from(document.querySelectorAll('#fastPassage .chapter-head, #prayPassage .chapter-head'));
-
-  // 若 verse dataset 缺失，用 sup + 最近的章標題補一次
-  function backfill(){
-    for(const el of verseEls){
-      if(el.dataset.chapter) continue;
-      const sup = el.querySelector('sup');
-      const v = sup ? sup.textContent.trim() : '';
-      const head = el.previousElementSibling && el.previousElementSibling.classList.contains('chapter-head')
-        ? el.previousElementSibling
-        : el.closest('.passage')?.querySelector('.chapter-head'); // fallback
-      const ch = head?.dataset.chapter || '';
-      if(ch) el.dataset.chapter = ch;
-      if(v) el.dataset.verse = v;
-    }
-  }
-  backfill();
-
-  const io = new IntersectionObserver((entries)=>{
-    // 取最接近中心的 entry
-    const visible = entries.filter(e=>e.isIntersecting);
-    if(!visible.length) return;
-
-    // 優先用節，沒有就用章標題
-    visible.sort((a,b)=>(b.intersectionRatio - a.intersectionRatio));
-    const el = visible[0].target;
-
-    const sec = sectionNameFor(el);
-    const ch = el.dataset.chapter || null;
-    const v  = el.dataset.verse || null;
-
-    if(ch){
-      state.section = sec;
-      state.chapter = ch;
-      state.verse = v;
-      updateText();
-    }
-  }, {
-    root: null,
-    // 讓「進入視窗中間」才更新
-    rootMargin: "-45% 0px -45% 0px",
-    threshold: [0.01, 0.1, 0.25]
-  });
-
-  // 先觀察章標題，再觀察節（節多，但還可接受）
-  headEls.forEach(el=>io.observe(el));
-  verseEls.forEach(el=>io.observe(el));
-
-  // 初始顯示：抓第一個可用節
-  const first = verseEls.find(el=>el.dataset.chapter) || headEls.find(el=>el.dataset.chapter);
-  if(first){
-    state.section = sectionNameFor(first);
-    state.chapter = first.dataset.chapter;
-    state.verse = first.dataset.verse || null;
-    updateText();
-  }
-})();
 </script>
 
   <!-- Bootstrap JS（非必要；保留給未來擴充） -->
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
           integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz"
           crossorigin="anonymous"></script>
-
-  <div id="readingCursor">—</div>
 </body>
 </html>
