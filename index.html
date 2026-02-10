@@ -11,7 +11,7 @@
         body { font-family: 'Noto Sans TC', sans-serif; background-color: #f8fafc; color: #1e293b; }
         .bible-font { font-family: 'Noto Serif TC', serif; }
         .verse-num { color: #3b82f6; font-weight: bold; margin-right: 0.6rem; font-size: 0.85rem; font-family: sans-serif; display: inline-block; width: 1.5rem; text-align: right; }
-        .verse-text { line-height: 2; font-size: 1.2rem; display: inline-block; width: calc(100% - 2.5rem); vertical-align: top; }
+        .verse-text { line-height: 2; font-size: 1.25rem; display: inline-block; width: calc(100% - 2.5rem); vertical-align: top; }
         .section-card { background: white; border-radius: 1.5rem; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); border: 1px solid #e2e8f0; overflow: hidden; margin-bottom: 2rem; }
         .guide-header { background-color: #eff6ff; border-left: 6px solid #2563eb; }
         .speed-header { background-color: #fff7ed; border-left: 6px solid #f97316; }
@@ -22,22 +22,18 @@
 
 <div id="loading-overlay" class="loading-screen p-6">
     <div id="loading-spinner" class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
-    <p id="loading-status" class="text-slate-600 font-bold text-lg">正在準備系統...</p>
+    <p id="loading-status" class="text-slate-600 font-bold text-lg">正在自動獲取經文資料...</p>
     
-    <div id="manual-area" class="mt-8 bg-slate-50 p-6 rounded-3xl border-2 border-dashed border-slate-200 w-full max-w-sm">
+    <!-- 預設隱藏，只有自動失敗後才會顯示 -->
+    <div id="manual-area" class="mt-8 bg-slate-50 p-6 rounded-3xl border-2 border-dashed border-slate-200 w-full max-w-sm hidden">
         <div class="mb-4 flex flex-col items-center">
             <div class="w-12 h-12 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mb-2">
                 <i data-lucide="file-up"></i>
             </div>
-            <p class="text-sm text-slate-700 font-bold">選取 NCtv.txt 檔案</p>
+            <p class="text-sm text-slate-700 font-bold">自動載入失敗，請手動選取</p>
         </div>
         <input type="file" id="file-selector" accept=".txt" class="text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:bg-blue-600 file:text-white hover:file:bg-blue-700 cursor-pointer">
-        <p class="text-[10px] text-slate-400 mt-4 leading-relaxed">
-            ※ 本機執行因安全限制需手動開啟一次。<br>
-            系統將自動嘗試 UTF-8 與 Big5 編碼。
-        </p>
     </div>
-    <div id="debug-info" class="mt-6 text-xs text-red-500 max-w-sm hidden"></div>
 </div>
 
 <div id="app-root" class="max-w-2xl mx-auto opacity-0 transition-opacity duration-700">
@@ -60,17 +56,18 @@
 
     <footer class="p-10 text-center text-slate-400 text-xs border-t">
         <p>© 2026 創世記讀經計畫</p>
-        <p id="footer-stats" class="mt-1">資料庫未載入</p>
+        <p id="footer-stats" class="mt-1">資料源：NCtv.txt</p>
     </footer>
 </div>
 
 <script>
     const SETTINGS = {
-        dbName: 'NCtv.txt',
+        dbName: './NCtv.txt', // 使用相對路徑標註
         bookKey: '創',
         startDate: '2026-01-04'
     };
 
+    // 讀經進度資料庫 (保持不變)
     const PLAN_WEEKS = [
         { wk: 1, theme: "新年新展望" },
         { wk: 2, days: { 1: "1-3", 2: "4-6", 3: "7-9", 4: "10-12", 5: "13-15", 6: "16-18" } },
@@ -92,29 +89,22 @@
 
     function parseDB(text) {
         if (!text) return false;
-        
-        // 移除可能的 UTF-8 BOM
         const cleanText = text.replace(/^\uFEFF/, "");
         const lines = cleanText.split(/\r?\n/);
         const store = {};
         let count = 0;
-        
-        // 更具彈性的正則：比對 [書名標籤] [數字][冒號][數字] [任何內容]
         const regex = /(\S+)\s+(\d+)[:：](\d+)\s+(.+)/;
 
         lines.forEach((line) => {
             const trimmedLine = line.trim();
             if (!trimmedLine) return;
-
             const match = trimmedLine.match(regex);
             if (match) {
                 const book = match[1];
-                const chap = parseInt(match[2]);
-                const verse = parseInt(match[3]);
-                const content = match[4].trim();
-
-                // 同時支援「創」或「創世記」
                 if (book === SETTINGS.bookKey || book === "創世記") {
+                    const chap = parseInt(match[2]);
+                    const verse = parseInt(match[3]);
+                    const content = match[4].trim();
                     if (!store[chap]) store[chap] = {};
                     store[chap][verse] = content;
                     count++;
@@ -125,73 +115,72 @@
         if (count > 0) {
             BIBLE_STORE = store;
             IS_READY = true;
-            document.getElementById('footer-stats').innerText = `已載入 ${count} 節經文`;
+            document.getElementById('footer-stats').innerText = `已成功載入 ${count} 節經文`;
             document.getElementById('loading-overlay').style.display = 'none';
             document.getElementById('app-root').style.opacity = '1';
             render(new Date(document.getElementById('calendar-picker').value || new Date()));
             return true;
         }
-        
-        // 除錯：記錄前三行內容以供查看格式
-        const preview = lines.slice(0, 3).join("\n");
-        console.warn("Parse attempt failed. First lines:\n" + preview);
         return false;
     }
 
     async function loadDB() {
+        console.log("嘗試從 GitHub 伺服器獲取檔案...");
         try {
-            const res = await fetch(SETTINGS.dbName);
+            // 嘗試自動獲取檔案
+            const res = await fetch(SETTINGS.dbName, { cache: "no-store" });
             if (res.ok) {
                 const text = await res.text();
-                if (parseDB(text)) return;
+                if (parseDB(text)) {
+                    console.log("自動獲取成功！");
+                    return;
+                }
+            } else {
+                console.error("伺服器回傳錯誤：" + res.status);
             }
-        } catch (e) {}
+        } catch (e) {
+            console.error("網路請求發生錯誤（可能是 CORS 或本機執行）", e);
+        }
         
+        // 失敗時顯示手動選取區
         document.getElementById('loading-spinner').style.display = 'none';
-        document.getElementById('loading-status').innerText = "請手點選檔案載入";
+        document.getElementById('loading-status').innerText = "無法自動獲取經文檔";
+        document.getElementById('manual-area').classList.remove('hidden');
         lucide.createIcons();
     }
 
     function fetchHtml(chap, rangeStr) {
-        if (!BIBLE_STORE[chap]) return `<div class="p-4 text-slate-400">查無第 ${chap} 章經文。</div>`;
-        
+        if (!BIBLE_STORE[chap]) return `<div class="p-4 text-slate-400 bible-font italic">查無第 ${chap} 章經文。</div>`;
         let start = 1, end = Object.keys(BIBLE_STORE[chap]).length;
         if (rangeStr) {
             const [s, e] = rangeStr.split('-').map(Number);
-            start = s; 
-            end = e || s;
+            start = s; end = e || s;
         }
-
         let html = "";
         for (let i = start; i <= end; i++) {
             const text = BIBLE_STORE[chap][i];
-            if (text) {
-                html += `<div class="mb-2"><span class="verse-num">${i}</span><span class="verse-text">${text}</span></div>`;
-            }
+            if (text) html += `<div class="mb-2"><span class="verse-num">${i}</span><span class="verse-text">${text}</span></div>`;
         }
         return html;
     }
 
     function render(targetDate) {
         if (!IS_READY) return;
-
         const start = new Date(SETTINGS.startDate);
         start.setHours(0,0,0,0);
         const today = new Date(targetDate);
         today.setHours(0,0,0,0);
-
         const diff = Math.floor((today - start) / 86400000);
         const weekIdx = Math.floor(diff / 7);
         const dayIdx = today.getDay();
 
         document.getElementById('header-date').innerText = today.toLocaleDateString('zh-TW', { year: 'numeric', month: 'long', day: 'numeric' });
         const dayNames = ["主日", "週一", "週二", "週三", "週四", "週五", "週六"];
-
         const main = document.getElementById('content-area');
         main.innerHTML = "";
 
         if (weekIdx < 0 || weekIdx >= PLAN_WEEKS.length) {
-            main.innerHTML = `<div class="py-20 text-center text-slate-400">非計畫日期</div>`;
+            main.innerHTML = `<div class="py-20 text-center text-slate-400 font-medium bible-font">非讀經計畫期間</div>`;
             document.getElementById('header-week').innerText = "計畫外日期";
             return;
         }
@@ -202,18 +191,17 @@
         if (dayIdx === 0 || week.theme) {
             main.innerHTML = `
                 <div class="section-card p-12 text-center">
-                    <div class="w-16 h-16 bg-yellow-50 rounded-full flex items-center justify-center mx-auto mb-6 shadow-inner text-yellow-600">
+                    <div class="w-16 h-16 bg-yellow-50 rounded-full flex items-center justify-center mx-auto mb-6 text-yellow-600 shadow-inner">
                         <i data-lucide="sun"></i>
                     </div>
                     <h2 class="text-2xl font-bold text-slate-800">${week.theme || '主日平安'}</h2>
-                    <p class="text-slate-500 mt-4 italic">今日為安息/主題日，暫無經文排程。</p>
+                    <p class="text-slate-500 mt-4 italic bible-font">今日為安息/主題日，讓我們在主裡重新得力。</p>
                 </div>
             `;
             lucide.createIcons();
             return;
         }
 
-        // 導讀
         const gRef = week.guides ? week.guides[dayIdx] : null;
         if (gRef) {
             const [c, v] = gRef.split(':');
@@ -221,16 +209,15 @@
                 <section class="section-card guide-accent">
                     <div class="guide-header px-6 py-4 flex justify-between items-center border-b">
                         <span class="text-blue-700 font-bold flex items-center gap-2"><i data-lucide="book-open" class="w-4 h-4"></i> 今日導讀</span>
-                        <span class="bg-blue-600 text-white text-xs px-2 py-0.5 rounded font-bold">創 ${gRef}</span>
+                        <span class="bg-blue-600 text-white text-xs px-2 py-0.5 rounded font-bold tracking-tighter">創 ${gRef}</span>
                     </div>
-                    <div class="p-6 bible-font text-lg">
+                    <div class="p-6 bible-font">
                         ${fetchHtml(parseInt(c), v)}
                     </div>
                 </section>
             `;
         }
 
-        // 速讀
         const sRef = week.days[dayIdx];
         if (sRef) {
             const [sStart, sEnd] = sRef.split('-').map(Number);
@@ -250,15 +237,14 @@
                 <section class="section-card speed-accent">
                     <div class="speed-header px-6 py-4 flex justify-between items-center border-b">
                         <span class="text-orange-700 font-bold flex items-center gap-2"><i data-lucide="zap" class="w-4 h-4"></i> 今日速讀</span>
-                        <span class="bg-orange-500 text-white text-xs px-2 py-0.5 rounded font-bold">創世記 ${sRef} 章</span>
+                        <span class="bg-orange-500 text-white text-xs px-2 py-0.5 rounded font-bold tracking-tighter">創世記 ${sRef} 章</span>
                     </div>
-                    <div class="p-6 bible-font text-lg">
+                    <div class="p-6 bible-font">
                         ${speedBody}
                     </div>
                 </section>
             `;
         }
-
         window.scrollTo(0, 0);
         lucide.createIcons();
     }
@@ -266,22 +252,11 @@
     document.getElementById('file-selector').addEventListener('change', (e) => {
         const file = e.target.files[0];
         if (!file) return;
-        
-        // 嘗試使用 UTF-8 讀取
         const reader = new FileReader();
         reader.onload = (ev) => {
-            const content = ev.target.result;
-            // 如果 UTF-8 讀取失敗（解析不到任何「創」），自動嘗試以 Big5 重新讀取
-            if (!parseDB(content)) {
-                console.log("UTF-8 parsing failed, retrying with Big5...");
+            if (!parseDB(ev.target.result)) {
                 const readerBig5 = new FileReader();
-                readerBig5.onload = (ev2) => {
-                    if (!parseDB(ev2.target.result)) {
-                        const debug = document.getElementById('debug-info');
-                        debug.innerText = "無法解析經文。請確認檔案內容開頭為「創 1:1」。";
-                        debug.classList.remove('hidden');
-                    }
-                };
+                readerBig5.onload = (ev2) => parseDB(ev2.target.result);
                 readerBig5.readAsText(file, "Big5");
             }
         };
@@ -295,8 +270,9 @@
     let initDate = new Date();
     if (initDate.getFullYear() < 2026) initDate = new Date("2026-01-12");
     document.getElementById('calendar-picker').value = initDate.toISOString().split('T')[0];
-
-    window.onload = loadDB;
+    
+    // 關鍵：網頁開啟後立即啟動自動載入
+    window.addEventListener('load', loadDB);
 </script>
 
 </body>
