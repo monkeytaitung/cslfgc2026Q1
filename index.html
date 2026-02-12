@@ -1,279 +1,66 @@
-<!DOCTYPE html>
-<html lang="zh-TW">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>今日讀經進度 - 創世記</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/lucide@latest"></script>
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@500;700&family=Noto+Sans+TC:wght@300;400;700&display=swap');
-        body { font-family: 'Noto Sans TC', sans-serif; background-color: #f8fafc; color: #1e293b; }
-        .bible-font { font-family: 'Noto Serif TC', serif; }
-        .verse-num { color: #3b82f6; font-weight: bold; margin-right: 0.6rem; font-size: 0.85rem; font-family: sans-serif; display: inline-block; width: 1.5rem; text-align: right; }
-        .verse-text { line-height: 2; font-size: 1.25rem; display: inline-block; width: calc(100% - 2.5rem); vertical-align: top; }
-        .section-card { background: white; border-radius: 1.5rem; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05); border: 1px solid #e2e8f0; overflow: hidden; margin-bottom: 2rem; }
-        .guide-header { background-color: #eff6ff; border-left: 6px solid #2563eb; }
-        .speed-header { background-color: #fff7ed; border-left: 6px solid #f97316; }
-        .loading-screen { position: fixed; inset: 0; background: white; z-index: 100; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
-    </style>
-</head>
-<body>
-
-<div id="loading-overlay" class="loading-screen p-6">
-    <div id="loading-spinner" class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
-    <p id="loading-status" class="text-slate-600 font-bold text-lg">正在自動獲取經文資料...</p>
-    
-    <!-- 預設隱藏，只有自動失敗後才會顯示 -->
-    <div id="manual-area" class="mt-8 bg-slate-50 p-6 rounded-3xl border-2 border-dashed border-slate-200 w-full max-w-sm hidden">
-        <div class="mb-4 flex flex-col items-center">
-            <div class="w-12 h-12 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mb-2">
-                <i data-lucide="file-up"></i>
-            </div>
-            <p class="text-sm text-slate-700 font-bold">自動載入失敗，請手動選取</p>
-        </div>
-        <input type="file" id="file-selector" accept=".txt" class="text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:bg-blue-600 file:text-white hover:file:bg-blue-700 cursor-pointer">
-    </div>
-</div>
-
-<div id="app-root" class="max-w-2xl mx-auto opacity-0 transition-opacity duration-700">
-    <header class="p-6 bg-white border-b sticky top-0 z-40 flex justify-between items-center shadow-sm">
-        <div class="flex flex-col">
-            <span id="header-date" class="text-blue-600 font-bold text-xs tracking-widest">2026年1月1日</span>
-            <h1 id="header-week" class="text-xl font-black text-slate-900">載入中...</h1>
-        </div>
-        <div class="relative group">
-            <input type="date" id="calendar-picker" class="absolute inset-0 opacity-0 cursor-pointer">
-            <div class="p-2 bg-slate-100 rounded-full text-slate-400 group-hover:bg-blue-100 group-hover:text-blue-600 transition-all">
-                <i data-lucide="calendar"></i>
-            </div>
-        </div>
-    </header>
-
-    <main id="content-area" class="p-4 py-8 min-h-screen">
-        <!-- 內容區域 -->
-    </main>
-
-    <footer class="p-10 text-center text-slate-400 text-xs border-t">
-        <p>© 2026 創世記讀經計畫</p>
-        <p id="footer-stats" class="mt-1">資料源：NCtv.txt</p>
-    </footer>
-</div>
-
-<script>
-    const SETTINGS = {
-        dbName: './NCtv.txt', // 使用相對路徑標註
-        bookKey: '創',
-        startDate: '2026-01-04'
-    };
-
-    // 讀經進度資料庫 (保持不變)
-    const PLAN_WEEKS = [
-        { wk: 1, theme: "新年新展望" },
-        { wk: 2, days: { 1: "1-3", 2: "4-6", 3: "7-9", 4: "10-12", 5: "13-15", 6: "16-18" } },
-        { wk: 3, days: { 1: "19-21", 2: "22-24", 3: "25-27", 4: "28-30", 5: "31-33", 6: "34-36" }, guides: { 1: "1:1-19", 2: "1:20-31", 3: "1:1-17", 4: "1:18-25", 5: "1:1-13", 6: "1:14-24" } },
-        { wk: 4, days: { 1: "37-39", 2: "40-42", 3: "43-45", 4: "46-48", 5: "49-50", 6: "1-3" }, guides: { 1: "4:1-15", 2: "4:16-26", 3: "5:1-32", 4: "6:1-22", 5: "7:1-24", 6: "8:1-22" } },
-        { wk: 5, days: { 1: "4-6", 2: "7-9", 3: "10-12", 4: "13-15", 5: "16-18", 6: "19-21" }, guides: { 1: "9:1-11", 2: "9:12-29", 3: "10:1-32", 4: "11:1-32", 5: "12:1-9", 6: "12:10-20" } },
-        { wk: 6, days: { 1: "22-24", 2: "25-27", 3: "28-30", 4: "31-33", 5: "34-36", 6: "37-39" }, guides: { 1: "13:1-18", 2: "14:1-16", 3: "14:17-24", 4: "15:1-21", 5: "16:1-16", 6: "17:1-18" } },
-        { wk: 7, theme: "新春" },
-        { wk: 8, days: { 1: "40-42", 2: "43-45", 3: "46-48", 4: "49-50", 5: "1-3", 6: "4-6" }, guides: { 1: "17:19-27", 2: "18:1-15", 3: "18:16-33", 4: "19:1-14", 5: "19:15-38", 6: "20:1-18" } },
-        { wk: 9, days: { 1: "7-9", 2: "10-12", 3: "13-15", 4: "16-18", 5: "19-21", 6: "22-24" }, guides: { 1: "21:1-21", 2: "22:22-34", 3: "23:1-24", 4: "23:1-20", 5: "24:1-27", 6: "24:28-49" } },
-        { wk: 10, days: { 1: "25-27", 2: "28-30", 3: "31-33", 4: "34-36", 5: "37-39", 6: "40-42" }, guides: { 1: "24:50-67", 2: "25:1-18", 3: "25:19-34", 4: "26:1-17", 5: "26:18-35", 6: "27:1-17" } },
-        { wk: 11, days: { 1: "43-45", 2: "46-48", 3: "49-50", 4: "1-3", 5: "4-6", 6: "7-9" }, guides: { 1: "27:1-17", 2: "27:18-29", 3: "27:30-46", 4: "28:1-22", 5: "29:1-20", 6: "29:21-35" } },
-        { wk: 12, days: { 1: "10-12", 2: "13-15", 3: "16-18", 4: "19-21", 5: "22-24", 6: "25-27" }, guides: { 1: "30:1-24", 2: "30:25-43", 3: "31:1-16", 4: "31:17-35", 5: "31:36-55", 6: "32:1-21" } },
-        { wk: 13, days: { 1: "28-30", 2: "31-33", 3: "34-36", 4: "37-39", 5: "40-42", 6: "43-45" }, guides: { 1: "32:22-32", 2: "33:1-20", 3: "34:1-17", 4: "34:18-31", 5: "35:1-15", 6: "35:16-29" } }
-    ];
-
-    let BIBLE_STORE = {}; 
-    let IS_READY = false;
-
-    function parseDB(text) {
-        if (!text) return false;
-        const cleanText = text.replace(/^\uFEFF/, "");
-        const lines = cleanText.split(/\r?\n/);
-        const store = {};
-        let count = 0;
-        const regex = /(\S+)\s+(\d+)[:：](\d+)\s+(.+)/;
-
-        lines.forEach((line) => {
-            const trimmedLine = line.trim();
-            if (!trimmedLine) return;
-            const match = trimmedLine.match(regex);
-            if (match) {
-                const book = match[1];
-                if (book === SETTINGS.bookKey || book === "創世記") {
-                    const chap = parseInt(match[2]);
-                    const verse = parseInt(match[3]);
-                    const content = match[4].trim();
-                    if (!store[chap]) store[chap] = {};
-                    store[chap][verse] = content;
-                    count++;
-                }
-            }
-        });
-
-        if (count > 0) {
-            BIBLE_STORE = store;
-            IS_READY = true;
-            document.getElementById('footer-stats').innerText = `已成功載入 ${count} 節經文`;
-            document.getElementById('loading-overlay').style.display = 'none';
-            document.getElementById('app-root').style.opacity = '1';
-            render(new Date(document.getElementById('calendar-picker').value || new Date()));
-            return true;
-        }
-        return false;
-    }
-
-    async function loadDB() {
-        console.log("嘗試從 GitHub 伺服器獲取檔案...");
-        try {
-            // 嘗試自動獲取檔案
-            const res = await fetch(SETTINGS.dbName, { cache: "no-store" });
-            if (res.ok) {
-                const text = await res.text();
-                if (parseDB(text)) {
-                    console.log("自動獲取成功！");
-                    return;
-                }
-            } else {
-                console.error("伺服器回傳錯誤：" + res.status);
-            }
-        } catch (e) {
-            console.error("網路請求發生錯誤（可能是 CORS 或本機執行）", e);
-        }
-        
-        // 失敗時顯示手動選取區
-        document.getElementById('loading-spinner').style.display = 'none';
-        document.getElementById('loading-status').innerText = "無法自動獲取經文檔";
-        document.getElementById('manual-area').classList.remove('hidden');
-        lucide.createIcons();
-    }
-
-    function fetchHtml(chap, rangeStr) {
-        if (!BIBLE_STORE[chap]) return `<div class="p-4 text-slate-400 bible-font italic">查無第 ${chap} 章經文。</div>`;
-        let start = 1, end = Object.keys(BIBLE_STORE[chap]).length;
-        if (rangeStr) {
-            const [s, e] = rangeStr.split('-').map(Number);
-            start = s; end = e || s;
-        }
-        let html = "";
-        for (let i = start; i <= end; i++) {
-            const text = BIBLE_STORE[chap][i];
-            if (text) html += `<div class="mb-2"><span class="verse-num">${i}</span><span class="verse-text">${text}</span></div>`;
-        }
-        return html;
-    }
-
-    function render(targetDate) {
-        if (!IS_READY) return;
-        const start = new Date(SETTINGS.startDate);
-        start.setHours(0,0,0,0);
-        const today = new Date(targetDate);
-        today.setHours(0,0,0,0);
-        const diff = Math.floor((today - start) / 86400000);
-        const weekIdx = Math.floor(diff / 7);
-        const dayIdx = today.getDay();
-
-        document.getElementById('header-date').innerText = today.toLocaleDateString('zh-TW', { year: 'numeric', month: 'long', day: 'numeric' });
-        const dayNames = ["主日", "週一", "週二", "週三", "週四", "週五", "週六"];
-        const main = document.getElementById('content-area');
-        main.innerHTML = "";
-
-        if (weekIdx < 0 || weekIdx >= PLAN_WEEKS.length) {
-            main.innerHTML = `<div class="py-20 text-center text-slate-400 font-medium bible-font">非讀經計畫期間</div>`;
-            document.getElementById('header-week').innerText = "計畫外日期";
-            return;
-        }
-
-        const week = PLAN_WEEKS[weekIdx];
-        document.getElementById('header-week').innerText = `第 ${week.wk} 週 · ${dayNames[dayIdx]}`;
-
-        if (dayIdx === 0 || week.theme) {
-            main.innerHTML = `
-                <div class="section-card p-12 text-center">
-                    <div class="w-16 h-16 bg-yellow-50 rounded-full flex items-center justify-center mx-auto mb-6 text-yellow-600 shadow-inner">
-                        <i data-lucide="sun"></i>
-                    </div>
-                    <h2 class="text-2xl font-bold text-slate-800">${week.theme || '主日平安'}</h2>
-                    <p class="text-slate-500 mt-4 italic bible-font">今日為安息/主題日，讓我們在主裡重新得力。</p>
-                </div>
-            `;
-            lucide.createIcons();
-            return;
-        }
-
-        const gRef = week.guides ? week.guides[dayIdx] : null;
-        if (gRef) {
-            const [c, v] = gRef.split(':');
-            main.innerHTML += `
-                <section class="section-card guide-accent">
-                    <div class="guide-header px-6 py-4 flex justify-between items-center border-b">
-                        <span class="text-blue-700 font-bold flex items-center gap-2"><i data-lucide="book-open" class="w-4 h-4"></i> 今日導讀</span>
-                        <span class="bg-blue-600 text-white text-xs px-2 py-0.5 rounded font-bold tracking-tighter">創 ${gRef}</span>
-                    </div>
-                    <div class="p-6 bible-font">
-                        ${fetchHtml(parseInt(c), v)}
-                    </div>
-                </section>
-            `;
-        }
-
-        const sRef = week.days[dayIdx];
-        if (sRef) {
-            const [sStart, sEnd] = sRef.split('-').map(Number);
-            let speedBody = "";
-            for (let c = sStart; c <= (sEnd || sStart); c++) {
-                speedBody += `
-                    <div class="mb-10 last:mb-0">
-                        <div class="flex items-center gap-4 mb-6">
-                            <span class="text-orange-400 text-[10px] font-black tracking-widest uppercase italic">Chapter ${c}</span>
-                            <div class="h-px bg-orange-100 flex-1"></div>
-                        </div>
-                        ${fetchHtml(c)}
-                    </div>
-                `;
-            }
-            main.innerHTML += `
-                <section class="section-card speed-accent">
-                    <div class="speed-header px-6 py-4 flex justify-between items-center border-b">
-                        <span class="text-orange-700 font-bold flex items-center gap-2"><i data-lucide="zap" class="w-4 h-4"></i> 今日速讀</span>
-                        <span class="bg-orange-500 text-white text-xs px-2 py-0.5 rounded font-bold tracking-tighter">創世記 ${sRef} 章</span>
-                    </div>
-                    <div class="p-6 bible-font">
-                        ${speedBody}
-                    </div>
-                </section>
-            `;
-        }
-        window.scrollTo(0, 0);
-        lucide.createIcons();
-    }
-
-    document.getElementById('file-selector').addEventListener('change', (e) => {
-        const file = e.target.files[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = (ev) => {
-            if (!parseDB(ev.target.result)) {
-                const readerBig5 = new FileReader();
-                readerBig5.onload = (ev2) => parseDB(ev2.target.result);
-                readerBig5.readAsText(file, "Big5");
-            }
-        };
-        reader.readAsText(file, "UTF-8");
-    });
-
-    document.getElementById('calendar-picker').addEventListener('change', (e) => {
-        render(new Date(e.target.value));
-    });
-
-    let initDate = new Date();
-    if (initDate.getFullYear() < 2026) initDate = new Date("2026-01-12");
-    document.getElementById('calendar-picker').value = initDate.toISOString().split('T')[0];
-    
-    // 關鍵：網頁開啟後立即啟動自動載入
-    window.addEventListener('load', loadDB);
-</script>
-
-</body>
-</html>
+ (cd "$(git rev-parse --show-toplevel)" && git apply --3way <<'EOF' 
+diff --git a/index.html b/index.html
+index 475a1f145cd0cf2df83ae6255734234e2eb51b5f..6c00f08ad86cdc993aeacae5ee57f17f7ec37bd8 100644
+--- a/index.html
++++ b/index.html
+@@ -51,55 +51,55 @@
+     </header>
+ 
+     <main id="content-area" class="p-4 py-8 min-h-screen">
+         <!-- 內容區域 -->
+     </main>
+ 
+     <footer class="p-10 text-center text-slate-400 text-xs border-t">
+         <p>© 2026 創世記讀經計畫</p>
+         <p id="footer-stats" class="mt-1">資料源：NCtv.txt</p>
+     </footer>
+ </div>
+ 
+ <script>
+     const SETTINGS = {
+         dbName: './NCtv.txt', // 使用相對路徑標註
+         bookKey: '創',
+         startDate: '2026-01-04'
+     };
+ 
+     // 讀經進度資料庫 (保持不變)
+     const PLAN_WEEKS = [
+         { wk: 1, theme: "新年新展望" },
+         { wk: 2, days: { 1: "1-3", 2: "4-6", 3: "7-9", 4: "10-12", 5: "13-15", 6: "16-18" } },
+         { wk: 3, days: { 1: "19-21", 2: "22-24", 3: "25-27", 4: "28-30", 5: "31-33", 6: "34-36" }, guides: { 1: "1:1-19", 2: "1:20-31", 3: "1:1-17", 4: "1:18-25", 5: "1:1-13", 6: "1:14-24" } },
+         { wk: 4, days: { 1: "37-39", 2: "40-42", 3: "43-45", 4: "46-48", 5: "49-50", 6: "1-3" }, guides: { 1: "4:1-15", 2: "4:16-26", 3: "5:1-32", 4: "6:1-22", 5: "7:1-24", 6: "8:1-22" } },
+-        { wk: 5, days: { 1: "4-6", 2: "7-9", 3: "10-12", 4: "13-15", 5: "16-18", 6: "19-21" }, guides: { 1: "9:1-11", 2: "9:12-29", 3: "10:1-32", 4: "11:1-32", 5: "12:1-9", 6: "12:10-20" } },
++        { wk: 5, days: { 1: "4-6", 2: "7-9", 3: "10-12", 4: "13-15", 5: "16-18", 6: "19-21" }, guides: { 1: "9:1-11", 2: "9:12-29", 3: "10:1-32", 4: "11:1-32", 5: "12:1-9", 6: "13:10-20" } },
+         { wk: 6, days: { 1: "22-24", 2: "25-27", 3: "28-30", 4: "31-33", 5: "34-36", 6: "37-39" }, guides: { 1: "13:1-18", 2: "14:1-16", 3: "14:17-24", 4: "15:1-21", 5: "16:1-16", 6: "17:1-18" } },
+         { wk: 7, theme: "新春" },
+         { wk: 8, days: { 1: "40-42", 2: "43-45", 3: "46-48", 4: "49-50", 5: "1-3", 6: "4-6" }, guides: { 1: "17:19-27", 2: "18:1-15", 3: "18:16-33", 4: "19:1-14", 5: "19:15-38", 6: "20:1-18" } },
+-        { wk: 9, days: { 1: "7-9", 2: "10-12", 3: "13-15", 4: "16-18", 5: "19-21", 6: "22-24" }, guides: { 1: "21:1-21", 2: "22:22-34", 3: "23:1-24", 4: "23:1-20", 5: "24:1-27", 6: "24:28-49" } },
++        { wk: 9, days: { 1: "7-9", 2: "10-12", 3: "13-15", 4: "16-18", 5: "19-21", 6: "22-24" }, guides: { 1: "21:1-21", 2: "21:22-34", 3: "22:1-24", 4: "23:1-20", 5: "24:1-27", 6: "24:28-49" } },
+         { wk: 10, days: { 1: "25-27", 2: "28-30", 3: "31-33", 4: "34-36", 5: "37-39", 6: "40-42" }, guides: { 1: "24:50-67", 2: "25:1-18", 3: "25:19-34", 4: "26:1-17", 5: "26:18-35", 6: "27:1-17" } },
+         { wk: 11, days: { 1: "43-45", 2: "46-48", 3: "49-50", 4: "1-3", 5: "4-6", 6: "7-9" }, guides: { 1: "27:1-17", 2: "27:18-29", 3: "27:30-46", 4: "28:1-22", 5: "29:1-20", 6: "29:21-35" } },
+         { wk: 12, days: { 1: "10-12", 2: "13-15", 3: "16-18", 4: "19-21", 5: "22-24", 6: "25-27" }, guides: { 1: "30:1-24", 2: "30:25-43", 3: "31:1-16", 4: "31:17-35", 5: "31:36-55", 6: "32:1-21" } },
+         { wk: 13, days: { 1: "28-30", 2: "31-33", 3: "34-36", 4: "37-39", 5: "40-42", 6: "43-45" }, guides: { 1: "32:22-32", 2: "33:1-20", 3: "34:1-17", 4: "34:18-31", 5: "35:1-15", 6: "35:16-29" } }
+     ];
+ 
+     let BIBLE_STORE = {}; 
+     let IS_READY = false;
+ 
+     function parseDB(text) {
+         if (!text) return false;
+         const cleanText = text.replace(/^\uFEFF/, "");
+         const lines = cleanText.split(/\r?\n/);
+         const store = {};
+         let count = 0;
+         const regex = /(\S+)\s+(\d+)[:：](\d+)\s+(.+)/;
+ 
+         lines.forEach((line) => {
+             const trimmedLine = line.trim();
+             if (!trimmedLine) return;
+             const match = trimmedLine.match(regex);
+             if (match) {
+                 const book = match[1];
+                 if (book === SETTINGS.bookKey || book === "創世記") {
+                     const chap = parseInt(match[2]);
+ 
+EOF
+)
