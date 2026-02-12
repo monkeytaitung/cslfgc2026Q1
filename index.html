@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>今日讀經進度</title>
+    <title>今日讀經進度 - 創世記</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     <style>
@@ -13,8 +13,6 @@
         .verse-num { color: #3b82f6; font-weight: bold; margin-right: 0.6rem; font-size: 0.85rem; font-family: sans-serif; display: inline-block; width: 1.5rem; text-align: right; }
         .verse-text { line-height: 2; font-size: 1.25rem; display: inline-block; width: calc(100% - 2.5rem); vertical-align: top; }
         .section-card { background: white; border-radius: 0.5rem; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1); overflow: hidden; margin-bottom: 2rem; }
-        .loading-spinner { animation: spin 1s linear infinite; }
-        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
     </style>
 </head>
 <body>
@@ -30,76 +28,87 @@
         </header>
 
         <main id="content-area">
-            <!-- 載入中狀態 -->
-            <div id="status-message" class="text-center py-20 text-slate-500 bg-white rounded-xl shadow-sm border border-slate-100">
-                <i data-lucide="refresh-cw" class="w-12 h-12 mx-auto mb-4 text-blue-400 loading-spinner"></i>
-                <p class="text-lg font-medium">正在自動載入經文資料...</p>
+            <!-- 載入中提示 -->
+            <div class="text-center py-20 text-slate-500">
+                <p class="text-lg">正在自動載入經文資料...</p>
             </div>
         </main>
     </div>
 
     <script>
-        let bibleData = null;
+    // 全域變數存放解析後的 JSON 經文資料
+    let bibleData = null;
 
-        // 當網頁載入完成時，自動抓取同目錄下的 NC.json
-        window.onload = async () => {
-            lucide.createIcons();
+    // 1. 新的 JSON 解析邏輯 (取代原本逐行解析 txt 的邏輯)
+    function parseDB(jsonContent) {
+        try {
+            bibleData = typeof jsonContent === 'string' ? JSON.parse(jsonContent) : jsonContent;
+            return true;
+        } catch (e) {
+            console.error("解析 JSON 失敗:", e);
+            return false;
+        }
+    }
+
+    // 2. 網頁載入時自動從伺服器/GitHub 抓取 NC.json
+    window.addEventListener('load', async () => {
+        lucide.createIcons();
+        
+        // 設定初始日期
+        let initDate = new Date();
+        // 原有邏輯：若為舊年份則設為 2024-01-01
+        if (initDate.getFullYear() < 2024) {
+            initDate = new Date("2024-01-01");
+        }
+        const dateInput = document.getElementById('calendar-picker');
+        dateInput.value = initDate.toISOString().split('T')[0];
+
+        try {
+            const response = await fetch('NC.json');
+            if (!response.ok) throw new Error('無法讀取 NC.json 檔案');
             
-            // 初始化日期選擇器
-            const dateInput = document.getElementById('calendar-picker');
-            const now = new Date();
-            dateInput.value = now.toISOString().split('T')[0];
+            const data = await response.json();
+            
+            if (parseDB(data)) {
+                // 資料載入成功後，執行渲染
+                render(initDate);
+            }
+        } catch (error) {
+            console.error("自動抓取資料失敗:", error);
+            document.getElementById('content-area').innerHTML = `
+                <div class="text-center py-20 text-red-500 bg-white rounded-xl shadow-sm border border-red-100">
+                    <p class="text-lg font-bold">自動載入失敗</p>
+                    <p class="text-sm mt-2">請確認 NC.json 是否已與 index.html 放在同一個路徑下。</p>
+                </div>
+            `;
+        }
+    });
 
-            try {
-                // 自動抓取資料
-                const response = await fetch('NC.json');
-                if (!response.ok) throw new Error('無法讀取 NC.json 檔案');
-                
-                bibleData = await response.json();
-                
-                // 抓取成功後，執行第一次渲染
-                render(now);
-            } catch (error) {
-                console.error(error);
-                document.getElementById('content-area').innerHTML = `
-                    <div class="text-center py-20 text-red-500 bg-white rounded-xl shadow-sm border border-red-100">
-                        <i data-lucide="alert-circle" class="w-16 h-16 mx-auto mb-4"></i>
-                        <p class="text-lg font-bold">資料載入失敗</p>
-                        <p class="text-sm mt-2">請確認 NC.json 是否與 index.html 放在同一個資料夾中。</p>
+    // 3. 渲染邏輯 (完全保留原有架構)
+    function render(date) {
+        if (!bibleData) return;
+
+        // 原有進度判斷邏輯
+        const targetBook = "創世記";
+        let sRef = date.getDate(); 
+        if (sRef > 50) sRef = (sRef % 50) || 1; 
+
+        let speedBody = "";
+
+        // 檢查資料庫是否有對應章節
+        if (bibleData[targetBook] && bibleData[targetBook][sRef]) {
+            const chapterData = bibleData[targetBook][sRef];
+            // 取得所有節號並排序
+            const verses = Object.keys(chapterData).map(Number).sort((a, b) => a - b);
+            
+            verses.forEach(v => {
+                speedBody += `
+                    <div class="mb-3 hover:bg-slate-50 p-2 rounded transition-colors flex">
+                        <span class="verse-num">${v}</span>
+                        <span class="verse-text">${chapterData[v]}</span>
                     </div>
                 `;
-                lucide.createIcons();
-            }
-        };
-
-        /**
-         * 渲染經文畫面
-         */
-        function render(date) {
-            if (!bibleData) return;
-
-            // --- 讀經進度邏輯 (示範用：取日期為章號) ---
-            const targetBook = "創世記";
-            let sRef = date.getDate(); 
-            // ---------------------------------------
-
-            let speedBody = "";
-
-            if (bibleData[targetBook] && bibleData[targetBook][sRef]) {
-                const versesObj = bibleData[targetBook][sRef];
-                const verseNums = Object.keys(versesObj).map(Number).sort((a, b) => a - b);
-                
-                verseNums.forEach(v => {
-                    speedBody += `
-                        <div class="mb-3 hover:bg-slate-50 p-2 rounded transition-colors flex">
-                            <span class="verse-num">${v}</span>
-                            <span class="verse-text">${versesObj[v]}</span>
-                        </div>
-                    `;
-                });
-            } else {
-                speedBody = `<p class="text-slate-500 text-center py-8">找不到《${targetBook}》第 ${sRef} 章的資料。</p>`;
-            }
+            });
 
             document.getElementById('content-area').innerHTML = `
                 <section class="section-card">
@@ -108,7 +117,7 @@
                             <i data-lucide="zap" class="w-4 h-4"></i> 今日速讀
                         </span>
                         <span class="bg-orange-500 text-white text-xs px-2 py-0.5 rounded font-bold tracking-tighter">
-                            ${targetBook} ${sRef} 章
+                            創世記 ${sRef} 章
                         </span>
                     </div>
                     <div class="p-6 bible-font">
@@ -116,15 +125,21 @@
                     </div>
                 </section>
             `;
-
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-            lucide.createIcons();
+        } else {
+            document.getElementById('content-area').innerHTML = `
+                <div class="text-center py-20 text-slate-400 bg-white rounded-xl shadow-sm border border-slate-100">
+                    <p>找不到 ${targetBook} 第 ${sRef} 章的資料</p>
+                </div>
+            `;
         }
+        window.scrollTo(0, 0);
+        lucide.createIcons();
+    }
 
-        // 監聽日期切換
-        document.getElementById('calendar-picker').addEventListener('change', (e) => {
-            render(new Date(e.target.value));
-        });
+    // 監聽日期變更
+    document.getElementById('calendar-picker').addEventListener('change', (e) => {
+        render(new Date(e.target.value));
+    });
     </script>
 </body>
 </html>
