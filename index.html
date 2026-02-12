@@ -32,7 +32,7 @@
             </div>
             <p class="text-sm text-slate-700 font-bold">自動載入失敗，請手動選取</p>
         </div>
-        <input type="file" id="file-selector" accept=".txt" class="text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:bg-blue-600 file:text-white hover:file:bg-blue-700 cursor-pointer">
+        <input type="file" id="file-selector" accept=".json,.txt" class="text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:bg-blue-600 file:text-white hover:file:bg-blue-700 cursor-pointer">
     </div>
 </div>
 
@@ -56,13 +56,13 @@
 
     <footer class="p-10 text-center text-slate-400 text-xs border-t">
         <p>© 2026 創世記讀經計畫</p>
-        <p id="footer-stats" class="mt-1">資料源：NCtv.txt</p>
+        <p id="footer-stats" class="mt-1">資料源：NC.json</p>
     </footer>
 </div>
 
 <script>
     const SETTINGS = {
-        dbName: './NCtv.txt', // 使用相對路徑標註
+        dbName: './NC.json', // 使用 NC.json 作為聖經經文資料庫
         bookKey: '創',
         startDate: '2026-01-04'
     };
@@ -90,32 +90,55 @@
     function parseDB(text) {
         if (!text) return false;
         const cleanText = text.replace(/^\uFEFF/, "");
-        const lines = cleanText.split(/\r?\n/);
         const store = {};
         let count = 0;
-        const regex = /(\S+)\s+(\d+)[:：](\d+)\s+(.+)/;
 
-        lines.forEach((line) => {
-            const trimmedLine = line.trim();
-            if (!trimmedLine) return;
-            const match = trimmedLine.match(regex);
-            if (match) {
-                const book = match[1];
-                if (book === SETTINGS.bookKey || book === "創世記") {
-                    const chap = parseInt(match[2]);
-                    const verse = parseInt(match[3]);
-                    const content = match[4].trim();
+        // 優先嘗試 JSON 結構（支援 NC.json）
+        try {
+            const parsed = JSON.parse(cleanText);
+            if (parsed && typeof parsed === 'object') {
+                const byBook = parsed[SETTINGS.bookKey] || parsed["創世記"] || parsed;
+                Object.entries(byBook).forEach(([chapKey, verses]) => {
+                    if (!verses || typeof verses !== 'object') return;
+                    const chap = parseInt(chapKey, 10);
+                    if (Number.isNaN(chap)) return;
                     if (!store[chap]) store[chap] = {};
-                    store[chap][verse] = content;
-                    count++;
-                }
+                    Object.entries(verses).forEach(([verseKey, content]) => {
+                        const verse = parseInt(verseKey, 10);
+                        if (Number.isNaN(verse)) return;
+                        if (typeof content !== 'string') return;
+                        store[chap][verse] = content.trim();
+                        count++;
+                    });
+                });
             }
-        });
+        } catch (_) {
+            // 非 JSON，改用舊版逐行格式解析
+            const lines = cleanText.split(/\r?\n/);
+            const regex = /(\S+)\s+(\d+)[:：](\d+)\s+(.+)/;
+
+            lines.forEach((line) => {
+                const trimmedLine = line.trim();
+                if (!trimmedLine) return;
+                const match = trimmedLine.match(regex);
+                if (match) {
+                    const book = match[1];
+                    if (book === SETTINGS.bookKey || book === "創世記") {
+                        const chap = parseInt(match[2]);
+                        const verse = parseInt(match[3]);
+                        const content = match[4].trim();
+                        if (!store[chap]) store[chap] = {};
+                        store[chap][verse] = content;
+                        count++;
+                    }
+                }
+            });
+        }
 
         if (count > 0) {
             BIBLE_STORE = store;
             IS_READY = true;
-            document.getElementById('footer-stats').innerText = `已成功載入 ${count} 節經文`;
+            document.getElementById('footer-stats').innerText = `已成功載入 ${count} 節經文（來源：NC.json）`;
             document.getElementById('loading-overlay').style.display = 'none';
             document.getElementById('app-root').style.opacity = '1';
             render(new Date(document.getElementById('calendar-picker').value || new Date()));
