@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>今日讀經進度 - 創世記</title>
+    <title>2026 第一季創世記讀經計畫</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/lucide@latest"></script>
     <style>
@@ -22,7 +22,7 @@
 
 <div id="loading-overlay" class="loading-screen p-6">
     <div id="loading-spinner" class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
-    <p id="loading-status" class="text-slate-600 font-bold text-lg">正在從 GitHub 獲取 NC.json...</p>
+    <p id="loading-status" class="text-slate-600 font-bold text-lg">正在自動獲取 NC.json 資料...</p>
 </div>
 
 <div id="app-root" class="max-w-2xl mx-auto opacity-0 transition-opacity duration-700">
@@ -49,11 +49,11 @@
 
 <script>
     const SETTINGS = {
-        dbName: './NC.json', // 指向你的 JSON 檔案
-        startDate: '2026-01-04'
+        dbName: './NC.json',
+        startDate: '2026-01-04' // 第一週主日
     };
 
-    // 讀經進度表
+    // 根據你提供的 13 週進度表重新編排
     const PLAN_WEEKS = [
         { wk: 1, theme: "新年新展望" },
         { wk: 2, days: { 1: "1-3", 2: "4-6", 3: "7-9", 4: "10-12", 5: "13-15", 6: "16-18" } },
@@ -73,43 +73,42 @@
     let BIBLE_STORE = {}; 
     let IS_READY = false;
 
-    // 自動加載 JSON 檔案
+    // 自動加載 JSON
     async function loadDB() {
         try {
             const res = await fetch(SETTINGS.dbName, { cache: "no-store" });
-            if (!res.ok) throw new Error("無法取得 NC.json 檔案");
-            
+            if (!res.ok) throw new Error("找不到 NC.json，請確認檔案已上傳至 GitHub。");
             BIBLE_STORE = await res.json();
             IS_READY = true;
-            
-            // 隱藏載入畫面
             document.getElementById('loading-overlay').style.display = 'none';
             document.getElementById('app-root').style.opacity = '1';
-            
-            // 執行渲染
             render(new Date(document.getElementById('calendar-picker').value || new Date()));
         } catch (e) {
-            document.getElementById('loading-status').innerHTML = `<span class="text-red-500">載入失敗：${e.message}</span><br><small class="text-slate-400">請確認 NC.json 與 index.html 放在同個資料夾</small>`;
+            document.getElementById('loading-status').innerHTML = `<span class="text-red-500">${e.message}</span>`;
             console.error(e);
         }
     }
 
+    // 核心抓取經文邏輯
     function fetchHtml(chap, rangeStr) {
-        const chapterData = BIBLE_STORE[chap];
+        const chapterData = BIBLE_STORE[chap.toString()]; // 支援字串索引
         if (!chapterData) return `<div class="p-4 text-slate-400 bible-font italic">查無第 ${chap} 章經文。</div>`;
         
         let start = 1, end = Object.keys(chapterData).length;
         if (rangeStr) {
-            const [s, e] = rangeStr.split('-').map(Number);
-            start = s; end = e || s;
+            const parts = rangeStr.split('-');
+            start = parseInt(parts[0]);
+            end = parts[1] ? parseInt(parts[1]) : start;
         }
         
         let html = "";
         for (let i = start; i <= end; i++) {
-            const text = chapterData[i];
-            if (text) html += `<div class="mb-2"><span class="verse-num">${i}</span><span class="verse-text">${text}</span></div>`;
+            const text = chapterData[i.toString()];
+            if (text) {
+                html += `<div class="mb-2"><span class="verse-num">${i}</span><span class="verse-text">${text}</span></div>`;
+            }
         }
-        return html;
+        return html || `<div class="p-4 text-slate-400 bible-font italic">第 ${chap} 章經文範圍有誤。</div>`;
     }
 
     function render(targetDate) {
@@ -118,9 +117,12 @@
         start.setHours(0,0,0,0);
         const today = new Date(targetDate);
         today.setHours(0,0,0,0);
-        const diff = Math.floor((today - start) / 86400000);
-        const weekIdx = Math.floor(diff / 7);
-        const dayIdx = today.getDay();
+        
+        // 計算週次與星期
+        const diffInMs = today.getTime() - start.getTime();
+        const diffInDays = Math.floor(diffInMs / (1000 * 60 * 60 * 24));
+        const weekIdx = Math.floor(diffInDays / 7);
+        const dayIdx = today.getDay(); // 0=日, 1=一...
 
         document.getElementById('header-date').innerText = today.toLocaleDateString('zh-TW', { year: 'numeric', month: 'long', day: 'numeric' });
         const dayNames = ["主日", "週一", "週二", "週三", "週四", "週五", "週六"];
@@ -128,7 +130,7 @@
         main.innerHTML = "";
 
         if (weekIdx < 0 || weekIdx >= PLAN_WEEKS.length) {
-            main.innerHTML = `<div class="py-20 text-center text-slate-400 font-medium bible-font">非讀經計畫期間</div>`;
+            main.innerHTML = `<div class="py-20 text-center text-slate-400 font-medium bible-font">非第一季計畫期間 (2026/01/04 - 04/04)</div>`;
             document.getElementById('header-week').innerText = "計畫外日期";
             return;
         }
@@ -136,6 +138,7 @@
         const week = PLAN_WEEKS[weekIdx];
         document.getElementById('header-week').innerText = `第 ${week.wk} 週 · ${dayNames[dayIdx]}`;
 
+        // 主日或特殊主題處理
         if (dayIdx === 0 || week.theme) {
             main.innerHTML = `
                 <div class="section-card p-12 text-center">
@@ -150,27 +153,30 @@
             return;
         }
 
+        // 導讀區塊
         const gRef = week.guides ? week.guides[dayIdx] : null;
         if (gRef) {
-            const [c, v] = gRef.split(':');
+            const [c, vRange] = gRef.split(':');
             main.innerHTML += `
-                <section class="section-card guide-accent">
+                <section class="section-card">
                     <div class="guide-header px-6 py-4 flex justify-between items-center border-b">
                         <span class="text-blue-700 font-bold flex items-center gap-2"><i data-lucide="book-open" class="w-4 h-4"></i> 今日導讀</span>
                         <span class="bg-blue-600 text-white text-xs px-2 py-0.5 rounded font-bold tracking-tighter">創 ${gRef}</span>
                     </div>
-                    <div class="p-6 bible-font">
-                        ${fetchHtml(parseInt(c), v)}
-                    </div>
+                    <div class="p-6 bible-font">${fetchHtml(c, vRange)}</div>
                 </section>
             `;
         }
 
-        const sRef = week.days[dayIdx];
+        // 速讀區塊
+        const sRef = week.days ? week.days[dayIdx] : null;
         if (sRef) {
-            const [sStart, sEnd] = sRef.split('-').map(Number);
+            const range = sRef.split('-');
+            const sStart = parseInt(range[0]);
+            const sEnd = range[1] ? parseInt(range[1]) : sStart;
+            
             let speedBody = "";
-            for (let c = sStart; c <= (sEnd || sStart); c++) {
+            for (let c = sStart; c <= sEnd; c++) {
                 speedBody += `
                     <div class="mb-10 last:mb-0">
                         <div class="flex items-center gap-4 mb-6">
@@ -182,17 +188,16 @@
                 `;
             }
             main.innerHTML += `
-                <section class="section-card speed-accent">
+                <section class="section-card">
                     <div class="speed-header px-6 py-4 flex justify-between items-center border-b">
                         <span class="text-orange-700 font-bold flex items-center gap-2"><i data-lucide="zap" class="w-4 h-4"></i> 今日速讀</span>
                         <span class="bg-orange-500 text-white text-xs px-2 py-0.5 rounded font-bold tracking-tighter">創世記 ${sRef} 章</span>
                     </div>
-                    <div class="p-6 bible-font">
-                        ${speedBody}
-                    </div>
+                    <div class="p-6 bible-font">${speedBody}</div>
                 </section>
             `;
         }
+        
         window.scrollTo(0, 0);
         lucide.createIcons();
     }
@@ -201,12 +206,12 @@
         render(new Date(e.target.value));
     });
 
-    // 初始化日期處理
+    // 初始化今日日期（若今日早於計畫開始日，預設顯示第一週週一）
     let initDate = new Date();
-    if (initDate.getFullYear() < 2026) initDate = new Date("2026-01-12");
+    const planStart = new Date(SETTINGS.startDate);
+    if (initDate < planStart) initDate = new Date("2026-01-12");
     document.getElementById('calendar-picker').value = initDate.toISOString().split('T')[0];
     
-    // 啟動載入
     window.addEventListener('load', loadDB);
 </script>
 
